@@ -1,117 +1,147 @@
-import sys  # We need sys so that we can pass argv to QApplication
-from PyQt4 import QtGui  # Import the PyQt4 module we'll need
-from PyQt4 import QtCore
-import kanjiease  # This file holds our MainWindow and all design related things
-import listings2
-from PIL import ImageGrab
+import sip
+sip.setapi('QVariant', 2)
 import win32api
-import drawrect
-from tess import bounding_box
-import win32con
-import tess
+import functions, jdict, nhocr, popup, rectangle
+import settings
+from functions import imageOCR
+from PyQt5 import QtCore
+from PyQt5 import QtGui
+from PyQt5 import QtWidgets
+from PyQt5.QtCore import QSettings
+from ctypes import wintypes
+import ctypes
+import pyHook
+import os
+
+
+user32 = ctypes.windll.user32
+user32.SetProcessDPIAware()
+myappid = u'Kanjidougu.v.0.2'
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 try:
     _fromUtf8 = QtCore.QString.fromUtf8
 except AttributeError:
     def _fromUtf8(s):
-        print 'fuccck'
         return s
 
 
-class ExampleApp(QtGui.QMainWindow, kanjiease.Ui_MainWindow):
-    # needed for polling mouse cursor position.
-    cursorMove = QtCore.pyqtSignal(object)
-    keyPressed = QtCore.pyqtSignal()
+class KanjiDougu(QtWidgets.QMainWindow):
+
+    closep = QtCore.pyqtSignal()
 
     def __init__(self):
-        super(self.__class__, self).__init__()
-        self.setupUi(self)  # This is defined in design.py file automatically
-        self.charline.returnPressed.connect(self.UpdateKanjiBox)
-
-        # timer options for polling and tracking cursor pos.
-        self.cursorMove.connect(self.handleCursorMove)
-        self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(1000)
-        self.timer.timeout.connect(self.pollCursor)
-        self.timer.start()
-        self.cursor = None
-
-    def pollCursor(self):
-        # cursor polling method
-        pos = QtGui.QCursor.pos()
-        if pos != self.cursor:
-            self.cursor = pos
-            self.cursorMove.emit(pos)
-
-    def handleCursorMove(self, pos):
-        # test method
-        pass
-        #print(pos)
+        super(KanjiDougu, self).__init__()
+        self.settings = QSettings("__settings.ini", QSettings.IniFormat)
+        self.setWindowTitle("KanjiDougu")
+        self.resize(900, 500)
+        self.initUI()
+        self.createActions()
+        self.createTrayIcon()
+        self.setIcon()
+        self.dialog = popup.Dialog()
+        self.hm = pyHook.HookManager()
+        self.hm.KeyDown = self.hotkeyPressEvent
+        self.hm.HookKeyboard()
 
 
-    def keyPressEvent(self, event):
-        if event.key() == QtCore.Qt.Key_Control:
+    def initUI(self):
 
-            img = ImageGrab.grab(bbox=bounding_box(75, 75, *win32api.GetCursorPos()))
-            tesstext = tess.runtesseract(img)
+        # setting menu selector
+        self.settingwidget = QtWidgets.QWidget()
+        self.setCentralWidget(self.settingwidget)
+        self.createSettingList()
 
-            if tesstext is not None:
-                self.UpdateKanjiBox(tesstext)
-                drawrect.main()
-            else:
-                pass
+        grid = QtWidgets.QGridLayout()
+        grid.addWidget(self.settinglist, 0, 0, 5, 1, QtCore.Qt.AlignLeft)
+        grid.addWidget(self.currentmenu, 0, 1, 0, 3, QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
 
-    def kanjiDef(self, text):
-            entries = listings2.trydef(text)
-            entries = listings2.parsedef(entries)
-            self.KanjiList.setRowCount(len(entries))
-            self.KanjiList.setColumnCount(3)
-            header = self.KanjiList.horizontalHeader()
-            header.setStretchLastSection(True)
+        self.settingwidget.setLayout(grid)
 
-            print entries
-            trans = []
-            #todo: add sublists so that it splits items by 3 and wraps them.
-            for i, entry in enumerate(entries):
-                head, read = entry[0:2]
-                self.KanjiList.setItem(i, 0, QtGui.QTableWidgetItem(head))
-                self.KanjiList.setItem(i, 1, QtGui.QTableWidgetItem(read))
-                trans = [x for x in entry[2:]]
-                trans = '|'.join(trans)
-                self.KanjiList.setItem(i, 2, QtGui.QTableWidgetItem(trans))
-            # self.KanjiList.setColumnCount(len(entries[0]))
-            #for i, row in enumerate(entries):
-            #        print row
-            #        item = QtGui.QTableWidgetItem(row)
-            #        self.KanjiList.setItem(i, 0, head)
-            #        self.KanjiList.setItem(i, 1, read)
-            #        self.KanjiList.setItem(i, 1, trans)
+    def createSettingList(self):
+        self.SettingIndex = QtCore.pyqtSignal
+        self.settinglist = QtWidgets.QListView()
+        self.menus = ["General"]
+        model = QtGui.QStandardItemModel(self.settinglist)
+        for menu in self.menus:
+            menuitem = QtGui.QStandardItem(menu)
+            model.appendRow(menuitem)
+        self.settinglist.setModel(model)
+        self.settinglist.clicked.connect(self.on_setting_changed)
+        self.settinglist.setCurrentIndex(model.index(0, 0))
+        self.currentmenu = settings.GeneralSettings()
+
+    def createActions(self):
+
+        self.restoreAction = QtWidgets.QAction("&Settings", self, triggered=self.showNormal)
+        self.quitAction = QtWidgets.QAction("&Quit", self, triggered=QtWidgets.qApp.quit)
 
 
+    def on_setting_changed(self):
 
-    def UpdateKanjiBox(self, text):
-        if text:
-            print text
-            message = text.decode('utf-8')
-        else:
-            message = unicode(self.charline.text())
-        kanjitext = message
-        layout = kanjiease._translate("MainWindow", "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n"
-"<html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\">\n"
-"p, li { white-space: pre-wrap; }\n"
-"</style></head><body style=\" font-family:\'MS Shell Dlg 2\'; font-size:8pt; font-weight:400; font-style:normal;\">\n"
-"<p align=\"center\" style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-size:16pt;\">" + kanjitext + "</span></p></body></html>", None)
-        self.KanjiBox.setHtml(layout)
-        self.kanjiDef(message)
-        self.KanjiBox.show()
+        if self.settinglist.currentIndex() is 0:
+            self.currentmenu = settings.GeneralSettings()
+    def createTrayIcon(self):
+        self.trayIconMenu = QtWidgets.QMenu(self)
+        self.trayIconMenu.addAction(self.restoreAction)
+        self.trayIconMenu.addSeparator()
+        self.trayIconMenu.addAction(self.quitAction)
 
+        self.trayIcon = QtWidgets.QSystemTrayIcon(self)
+        self.trayIcon.setContextMenu(self.trayIconMenu)
 
-def main():
-    app = QtGui.QApplication(sys.argv)  # A new instance of QApplication
-    form = ExampleApp()                 # We set the form to be our ExampleApp )
-    form.show()                         # Show the form
-    app.exec_()                         # and execute the app
+    def setIcon(self):
+        icon = QtGui.QIcon('./images/ji.svg')
+        self.trayIcon.setIcon(icon)
+        self.setWindowIcon(icon)
+        self.trayIcon.show()
 
+    def hotkeyPressEvent(self, event):
+        if event.KeyID is 163:
+            self.ocrEvent()
+        if event.KeyID is 27:
+            QtWidgets.qApp.quit()
 
-if __name__ == '__main__':              # if we're running file directly and not importing it
-    main()                              # run the main function
+    def ocrEvent(self):
+        cx, cy = win32api.GetCursorPos()
+        # height and width of screengrab
+        h = self.settings.value('height', type=int)
+        w = self.settings.value('width', type=int)
+        text, img, preview = imageOCR(h, w)
+        self.makeBox(h, w, cx, cy)
+        self.makePopup(text)
+
+    def makeBox(self, h, w, cx, cy):
+        self.box = rectangle.Box()
+        self.box.height = h
+        self.box.width = w
+        self.box.cx = cx - (h / 2)
+        self.box.cy = cy - (w / 2)
+        self.box.setVisible(True)
+        self.box.closep.connect(self.closepopups)
+        self.box.show()
+
+    def makePopup(self, text):
+        self.dialog.setkanjiBox(text)
+        self.dialog.setDefList(text)
+        self.dialog.show()
+
+    def closepopups(self):
+        self.dialog.setHidden(True)
+        self.box.setHidden(True)
+
+if __name__ == '__main__':
+
+    import sys
+
+    app = QtWidgets.QApplication(sys.argv)
+
+    if not QtWidgets.QSystemTrayIcon.isSystemTrayAvailable():
+        QtWidgets.QMessageBox.critical(None, "KanjiDougu", "I couldn't detect any system tray on this system.")
+        sys.exit(1)
+
+    QtWidgets.QApplication.setQuitOnLastWindowClosed(False)
+
+    window = KanjiDougu()
+    window.show()
+    sys.exit(app.exec_())

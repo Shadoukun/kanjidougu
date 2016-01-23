@@ -3,10 +3,12 @@
 import tinysegmenter
 from cjklib.dictionary import EDICT
 import re
+import sys
+reload(sys)
+sys.setdefaultencoding('utf8')
 
 
 
-#text = u'これは一例のです。'
 
 def tokenize(text):
     outtokens = []
@@ -32,13 +34,12 @@ def search(text):
 
     return output
 
-
-#tokens = tokenize(text)
-#word = tokens[0]
-#print word[0]
 jdict = EDICT()
 
 def trydef(text):
+    jdict = EDICT()
+    jdict.db.registerUnicode = True
+
     output = []
     outdict = jdict.getForHeadword(text)
     for line in outdict:
@@ -62,21 +63,3 @@ def parsedef(inlist):
         trans = trans.replace('/', ' ')
         outline.extend((head, reading, trans))
     return [outline[i:i+3] for i in xrange(0, len(outline), 3)]
-
-text = trydef(u'愛')
-print(parsedef(text))
-#print parsedef(text)
-#test = parsedef(blah)
-#print '||'.join(test)
-#for t in tuples:
-
-# blah2 = []
-# blah = search(text)   ``
-# pprint.pprint([l for l in blah])
-#
-
-#for outset in blah:
-#    for line in outset:
-#        blah2.append([l for l in line])
-#print blah2
-# print '|'.join(tokens)
